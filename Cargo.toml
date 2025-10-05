@@ -12,3 +12,5 @@ crossterm = "0.26"
 fuzzy-matcher = "0.3"
 shellexpand = "2.1"
 tempfile = "3.3"
+dirs = "5.0"
+clap = { version = "4.0", features = ["derive"] }

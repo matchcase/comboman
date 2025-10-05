@@ -1,14 +1,11 @@
 use crate::types::{Combo, SaveOption};
 use crossterm::{
     event::{self, Event, KeyCode},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear,
-        ClearType,
-    },
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use ratatui::widgets::ListState;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -16,7 +13,6 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Terminal,
 };
-use ratatui::widgets::ListState;
 use std::io;
 use std::ops::{Deref, DerefMut};
 
@@ -25,7 +21,6 @@ struct RawTerminal(Terminal<CrosstermBackend<io::Stdout>>);
 impl Drop for RawTerminal {
     fn drop(&mut self) {
         disable_raw_mode().unwrap();
-        execute!(self.0.backend_mut(), LeaveAlternateScreen).unwrap();
     }
 }
 
@@ -44,8 +39,7 @@ impl DerefMut for RawTerminal {
 
 fn setup_terminal() -> Result<RawTerminal, io::Error> {
     enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, Clear(ClearType::All), EnterAlternateScreen)?;
+    let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let terminal = Terminal::new(backend)?;
     Ok(RawTerminal(terminal))
@@ -58,7 +52,10 @@ fn setup_terminal() -> Result<RawTerminal, io::Error> {
 ///  - Left / d: remove current item from stack
 ///  - Enter: finalize, return Vec<String>
 ///  - Esc: cancel => None
-pub fn select_stack(history: Vec<String>, initial_stack: Option<Vec<String>>) -> Option<Vec<String>> {
+pub fn select_stack(
+    history: Vec<String>,
+    initial_stack: Option<Vec<String>>,
+) -> Option<Vec<String>> {
     if history.is_empty() {
         return None;
     }
@@ -82,47 +79,62 @@ pub fn select_stack(history: Vec<String>, initial_stack: Option<Vec<String>>) ->
     }
 
     loop {
-        terminal.draw(|f| {
-            let size = f.size();
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(size);
+        terminal
+            .draw(|f| {
+                let size = f.size();
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(size);
 
-            let history_title = if selection_mode {
-                "History (Select Mode - SPACE for normal)"
-            } else {
-                "History (Normal Mode - SPACE for select)"
-            };
+                let history_title = if selection_mode {
+                    "History (Select Mode - SPACE for normal)"
+                } else {
+                    "History (Normal Mode - SPACE for select)"
+                };
 
-            // History pane: mark included commands with a check
-            let history_items: Vec<ListItem> = history
-                .iter()
-                .enumerate()
-                .map(|(i, cmd)| {
-                    let style = if selected_indices.contains(&i) {
-                        Style::default().bg(Color::Blue)
-                    } else {
-                        Style::default()
-                    };
-                    ListItem::new(cmd.clone()).style(style)
-                })
-                .collect();
+                // History pane: mark included commands with a check
+                let history_items: Vec<ListItem> = history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, cmd)| {
+                        let style = if selected_indices.contains(&i) {
+                            Style::default().bg(Color::Blue)
+                        } else {
+                            Style::default()
+                        };
+                        ListItem::new(cmd.clone()).style(style)
+                    })
+                    .collect();
 
-            let history_list = List::new(history_items)
-                .block(Block::default().title(history_title).borders(Borders::ALL))
-                .highlight_style(Style::default().bg(Color::Yellow))
-                .highlight_symbol(">> ");
+                let history_list = List::new(history_items)
+                    .block(
+                        Block::default()
+                            .title(history_title)
+                            .borders(Borders::ALL)
+                            .style(Style::default().bg(Color::Black)),
+                    )
+                    .highlight_style(Style::default().bg(Color::Yellow))
+                    .highlight_symbol(">> ");
 
-            f.render_stateful_widget(history_list, chunks[0], &mut list_state);
+                f.render_stateful_widget(history_list, chunks[0], &mut list_state);
 
-            // Selected stack pane
-            let mut sorted_indices = selected_indices.clone();
-            sorted_indices.sort();
-            let stack_items: Vec<ListItem> = sorted_indices.iter().map(|i| ListItem::new(history[*i].clone())).collect();
-            let stack_list = List::new(stack_items).block(Block::default().title("Selected Stack").borders(Borders::ALL));
-            f.render_widget(stack_list, chunks[1]);
-        }).unwrap();
+                // Selected stack pane
+                let mut sorted_indices = selected_indices.clone();
+                sorted_indices.sort();
+                let stack_items: Vec<ListItem> = sorted_indices
+                    .iter()
+                    .map(|i| ListItem::new(history[*i].clone()))
+                    .collect();
+                let stack_list = List::new(stack_items).block(
+                    Block::default()
+                        .title("Selected Stack")
+                        .borders(Borders::ALL)
+                        .style(Style::default().bg(Color::Black)),
+                );
+                f.render_widget(stack_list, chunks[1]);
+            })
+            .unwrap();
 
         // Input
         if let Event::Key(key) = event::read().unwrap() {
@@ -131,20 +143,18 @@ pub fn select_stack(history: Vec<String>, initial_stack: Option<Vec<String>>) ->
                     if cursor_idx > 0 {
                         cursor_idx -= 1;
                         list_state.select(Some(cursor_idx));
-                        if selection_mode
-                            && !selected_indices.contains(&cursor_idx) {
-                                selected_indices.push(cursor_idx);
-                            }
+                        if selection_mode && !selected_indices.contains(&cursor_idx) {
+                            selected_indices.push(cursor_idx);
+                        }
                     }
                 }
                 KeyCode::Down => {
                     if cursor_idx + 1 < history.len() {
                         cursor_idx += 1;
                         list_state.select(Some(cursor_idx));
-                        if selection_mode
-                            && !selected_indices.contains(&cursor_idx) {
-                                selected_indices.push(cursor_idx);
-                            }
+                        if selection_mode && !selected_indices.contains(&cursor_idx) {
+                            selected_indices.push(cursor_idx);
+                        }
                     }
                 }
                 KeyCode::Char(' ') => {
@@ -160,9 +170,17 @@ pub fn select_stack(history: Vec<String>, initial_stack: Option<Vec<String>>) ->
                 KeyCode::Left | KeyCode::Char('d') => {
                     selected_indices.retain(|&i| i != cursor_idx);
                 }
+                KeyCode::Right => {
+                    if !selected_indices.contains(&cursor_idx) {
+                        selected_indices.push(cursor_idx);
+                    }
+                }
                 KeyCode::Enter => {
                     selected_indices.sort();
-                    let selected_stack: Vec<String> = selected_indices.iter().map(|i| history[*i].clone()).collect();
+                    let selected_stack: Vec<String> = selected_indices
+                        .iter()
+                        .map(|i| history[*i].clone())
+                        .collect();
                     return Some(selected_stack);
                 }
                 KeyCode::Esc => return None,
@@ -194,13 +212,23 @@ pub fn select_save_option(stack: &[String]) -> Option<SaveOption> {
 
                 let stack_items: Vec<ListItem> =
                     stack.iter().map(|s| ListItem::new(s.as_str())).collect();
-                let stack_list =
-                    List::new(stack_items).block(Block::default().title("Selected Stack").borders(Borders::ALL));
+                let stack_list = List::new(stack_items).block(
+                    Block::default()
+                        .title("Selected Stack")
+                        .borders(Borders::ALL)
+                        .style(Style::default().bg(Color::Black)),
+                );
                 f.render_widget(stack_list, chunks[0]);
 
-                let options_items: Vec<ListItem> = options.iter().map(|&o| ListItem::new(o)).collect();
+                let options_items: Vec<ListItem> =
+                    options.iter().map(|&o| ListItem::new(o)).collect();
                 let options_list = List::new(options_items)
-                    .block(Block::default().title("Save Options").borders(Borders::ALL))
+                    .block(
+                        Block::default()
+                            .title("Save Options")
+                            .borders(Borders::ALL)
+                            .style(Style::default().bg(Color::Black)),
+                    )
                     .highlight_style(Style::default().bg(Color::Blue));
                 f.render_stateful_widget(options_list, chunks[1], &mut list_state);
             })
@@ -258,24 +286,42 @@ pub fn run_ui(mut combos: Vec<Combo>) -> Option<String> {
     let mut terminal = setup_terminal().unwrap();
 
     loop {
-        terminal.draw(|f| {
-            let size = f.size();
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
-                .split(size);
+        terminal
+            .draw(|f| {
+                let size = f.size();
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
+                    .split(size);
 
-            let items: Vec<ListItem> = filtered.iter().map(|c| ListItem::new(c.name.clone())).collect();
-            let list = List::new(items)
-                .block(Block::default().title(format!("Combos (filter: {filter_input})")).borders(Borders::ALL))
-                .highlight_symbol(">>")
-                .highlight_style(Style::default().bg(Color::Blue));
-            f.render_stateful_widget(list, chunks[0], &mut list_state);
+                let items: Vec<ListItem> = filtered
+                    .iter()
+                    .map(|c| ListItem::new(c.name.clone()))
+                    .collect();
+                let list = List::new(items)
+                    .block(
+                        Block::default()
+                            .title(format!("Combos (filter: {filter_input})"))
+                            .borders(Borders::ALL)
+                            .style(Style::default().bg(Color::Black)),
+                    )
+                    .highlight_symbol(">>")
+                    .highlight_style(Style::default().bg(Color::Blue));
+                f.render_stateful_widget(list, chunks[0], &mut list_state);
 
-            let preview_text = filtered.get(selected_idx).map(|c| c.commands.join("\n")).unwrap_or_default();
-            let preview = Paragraph::new(preview_text).block(Block::default().title("Preview").borders(Borders::ALL));
-            f.render_widget(preview, chunks[1]);
-        }).unwrap();
+                let preview_text = filtered
+                    .get(selected_idx)
+                    .map(|c| c.commands.join("\n"))
+                    .unwrap_or_default();
+                let preview = Paragraph::new(preview_text).block(
+                    Block::default()
+                        .title("Preview")
+                        .borders(Borders::ALL)
+                        .style(Style::default().bg(Color::Black)),
+                );
+                f.render_widget(preview, chunks[1]);
+            })
+            .unwrap();
 
         if let Event::Key(key) = event::read().unwrap() {
             match key.code {
@@ -293,7 +339,8 @@ pub fn run_ui(mut combos: Vec<Combo>) -> Option<String> {
                 }
                 KeyCode::Char(c) => {
                     filter_input.push(c);
-                    filtered = combos.iter()
+                    filtered = combos
+                        .iter()
                         .filter(|combo| matcher.fuzzy_match(&combo.name, &filter_input).is_some())
                         .cloned()
                         .collect();
@@ -302,7 +349,8 @@ pub fn run_ui(mut combos: Vec<Combo>) -> Option<String> {
                 }
                 KeyCode::Backspace => {
                     filter_input.pop();
-                    filtered = combos.iter()
+                    filtered = combos
+                        .iter()
                         .filter(|combo| matcher.fuzzy_match(&combo.name, &filter_input).is_some())
                         .cloned()
                         .collect();
@@ -311,6 +359,46 @@ pub fn run_ui(mut combos: Vec<Combo>) -> Option<String> {
                 }
                 KeyCode::Enter => {
                     return filtered.get(selected_idx).map(|c| c.name.clone());
+                }
+                KeyCode::Esc => return None,
+                _ => {}
+            }
+        }
+    }
+}
+
+pub fn prompt_input(prompt: &str) -> Option<String> {
+    let mut terminal = setup_terminal().unwrap();
+    let mut input = String::new();
+
+    loop {
+        terminal
+            .draw(|f| {
+                let size = f.size();
+                let block = Block::default().style(Style::default().bg(Color::Black));
+                f.render_widget(block, size);
+
+                let prompt_text = format!("{prompt}{input}");
+                let input_paragraph = Paragraph::new(prompt_text)
+                    .block(Block::default().borders(Borders::ALL).title("Input"));
+                f.render_widget(input_paragraph, size);
+            })
+            .unwrap();
+
+        if let Event::Key(key) = event::read().unwrap() {
+            match key.code {
+                KeyCode::Char(c) => {
+                    input.push(c);
+                }
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Enter => {
+                    if input.is_empty() {
+                        return None;
+                    } else {
+                        return Some(input);
+                    }
                 }
                 KeyCode::Esc => return None,
                 _ => {}

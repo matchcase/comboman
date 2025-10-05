@@ -1,13 +1,26 @@
 use crate::types::Combo;
-use std::fs::{File, OpenOptions};
-use std::path::Path;
+use std::fs::{create_dir_all, File, OpenOptions};
+use std::path::{Path, PathBuf};
 use chrono::Utc;
 
-/// Path to YAML file. We expand the tilde before use.
-const COMBO_FILE: &str = "~/.local/share/comboman/combos.yaml";
+/// Returns the path to the combo file, ensuring the directory exists.
+fn get_combo_file_path(combo_directory: Option<String>) -> PathBuf {
+    let mut path = match combo_directory {
+        Some(dir) => PathBuf::from(dir),
+        None => {
+            let config_dir = dirs::config_dir().expect("Cannot find config directory");
+            let mut path = config_dir;
+            path.push("comboman");
+            path
+        }
+    };
+    create_dir_all(&path).expect("Cannot create comboman directory");
+    path.push("combos.yaml");
+    path
+}
 
-pub fn load_combos() -> Vec<Combo> {
-    let path = shellexpand::tilde(COMBO_FILE).into_owned();
+pub fn load_combos(combo_directory: Option<String>) -> Vec<Combo> {
+    let path = get_combo_file_path(combo_directory);
     if !Path::new(&path).exists() {
         return vec![];
     }
@@ -15,8 +28,8 @@ pub fn load_combos() -> Vec<Combo> {
     serde_yaml::from_reader(f).unwrap_or_else(|_| vec![])
 }
 
-pub fn save_combos(combos: &[Combo]) {
-    let path = shellexpand::tilde(COMBO_FILE).into_owned();
+pub fn save_combos(combos: &[Combo], combo_directory: Option<String>) {
+    let path = get_combo_file_path(combo_directory);
     let f = OpenOptions::new()
         .create(true)
         .write(true)
@@ -34,11 +47,11 @@ pub fn update_last_used(combos: &mut [Combo], name: &str) {
 
 /// Add a combo with optional name. If name is None, generate fallback
 /// using sanitize_name(first_command) + _i to avoid collisions.
-pub fn add_combo(combos: &mut Vec<Combo>, commands: Vec<String>, name: Option<String>) {
+pub fn add_combo(combos: &mut Vec<Combo>, commands: Vec<String>, name: Option<String>, combo_directory: Option<String>) {
     let now = Utc::now();
     let combo_name = name.unwrap_or_else(|| {
         let base = commands
-            .first()
+            .last()
             .map(|s| sanitize_name(s))
             .unwrap_or_else(|| "combo".to_string());
         let mut i = 0;
@@ -57,7 +70,7 @@ pub fn add_combo(combos: &mut Vec<Combo>, commands: Vec<String>, name: Option<St
         last_used: now.timestamp(),
     });
 
-    save_combos(combos);
+    save_combos(combos, combo_directory);
 }
 
 /// Sanitize a command token into a safe base name.

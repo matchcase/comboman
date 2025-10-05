@@ -5,12 +5,12 @@ mod exec;
 mod history;
 
 use std::env;
-use std::io::{stdin, stdout, Write};
+use std::io::{stdout, Write};
 
 use crate::exec::{edit_stack, run_combo};
 use crate::history::import_history;
 use crate::store::{add_combo, load_combos, save_combos, update_last_used};
-use crate::ui::{run_ui, select_save_option, select_stack};
+use crate::ui::{prompt_input, run_ui, select_save_option, select_stack};
 use crate::types::{Combo, SaveOption};
 use crossterm::{
     cursor::MoveTo,
@@ -28,44 +28,56 @@ fn list_combos(combos: &[Combo]) {
     }
 }
 
-fn delete_combo(combos: &mut Vec<Combo>, name: &str) {
+fn delete_combo(combos: &mut Vec<Combo>, name: &str, combo_directory: Option<String>) {
     let before = combos.len();
     combos.retain(|c| c.name != name);
     if combos.len() < before {
-        save_combos(combos);
+        save_combos(combos, combo_directory);
         println!("Deleted combo '{name}'");
     } else {
         eprintln!("Combo '{name}' not found");
     }
 }
 
-fn prompt_line(prompt: &str) -> Option<String> {
-    print!("{prompt}");
-    stdout().flush().ok()?;
-    let mut line = String::new();
-    stdin().read_line(&mut line).ok()?;
-    let s = line.trim();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s.to_string())
-    }
+
+
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(long, global = true)]
+    combo_directory: Option<String>,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Parser)]
+enum Commands {
+    List,
+    Delete { name: String },
+    New,
+    #[command(name = "run")]
+    Run {
+        name: Option<String>,
+        #[arg(long)]
+        no_confirm: bool,
+    },
 }
 
 fn main() {
-    let mut combos = load_combos();
-    let args: Vec<String> = env::args().collect();
+    let cli = Cli::parse();
+    let combo_dir = cli.combo_directory.clone();
 
-    match args.get(1).map(|s| s.as_str()) {
-        Some("list") => list_combos(&combos),
-        Some("delete") => {
-            if let Some(name) = args.get(2) {
-                delete_combo(&mut combos, name);
-            } else {
-                eprintln!("Usage: comboman delete <name>");
-            }
+    let mut combos = load_combos(cli.combo_directory);
+
+    match cli.command {
+        Commands::List => list_combos(&combos),
+        Commands::Delete { name } => {
+            delete_combo(&mut combos, &name, combo_dir);
         }
-        Some("new") => {
+        Commands::New => {
             // Import recent history and open stack-like selector
             let recent_cmds = import_history(200); // show up to 200 recent commands
             if recent_cmds.is_empty() {
@@ -87,10 +99,10 @@ fn main() {
                         execute!(stdout(), Clear(ClearType::All), MoveTo(0, 0)).unwrap();
                     }
                     Some(SaveOption::SaveAsScript) => {
-                        if let Some(path) = prompt_line("Enter path to save script: ") {
+                        if let Some(path) = prompt_input("Enter path to save script: ") {
                             let script = stack.join("\n");
                             if fs::write(&path, script).is_ok() {
-                                println!("Saved script to {path}");
+                                println!("\nSaved script to {path}");
                             } else {
                                 eprintln!("Failed to save script to {path}");
                             }
@@ -98,7 +110,7 @@ fn main() {
                         break;
                     }
                     Some(SaveOption::SaveAsFunction) => {
-                        let name = prompt_line("Enter function name (leave blank for default): ");
+                        let name = prompt_input("Enter function name (leave blank for default): ");
                         let func_name =
                             name.unwrap_or_else(|| format!("command_{}", combos.len() + 1));
                         let function =
@@ -108,7 +120,7 @@ fn main() {
                         let shell_rc = Path::new(&env::var("HOME").unwrap()).join(".bashrc");
                         if let Ok(mut file) = fs::OpenOptions::new().append(true).open(&shell_rc) {
                             if file.write_all(function.as_bytes()).is_ok() {
-                                println!("Added function '{func_name}' to your shell rc file.");
+                                println!("\nAdded function '{func_name}' to your shell rc file.");
                                 println!("Run 'source {}' to use it.", shell_rc.display());
                             } else {
                                 eprintln!("Failed to write to shell rc file.");
@@ -120,9 +132,9 @@ fn main() {
                     }
                     Some(SaveOption::SaveAsCombo) => {
                         let name =
-                            prompt_line("Enter name for combo (leave blank to auto-generate): ");
-                        add_combo(&mut combos, stack, name);
-                        println!("Combo saved.");
+                            prompt_input("Enter name for combo (leave blank to auto-generate): ");
+                        add_combo(&mut combos, stack, name, combo_dir.clone());
+                        println!("\nCombo saved.");
                         break;
                     }
                     None => {
@@ -132,27 +144,31 @@ fn main() {
                 }
             }
         }
-        Some("run") | None => {
+        Commands::Run { name, no_confirm } => {
             // Interactive run UI
             if combos.is_empty() {
                 println!("No saved combos. Use 'comboman new' to create one.");
                 return;
             }
-            if let Some(name) = run_ui(combos.clone()) {
-                if let Some(combo) = combos.iter().find(|c| c.name == name) {
-                    run_combo(combo);
-                    update_last_used(&mut combos, &name);
-                    save_combos(&combos);
-                } else {
-                    eprintln!("Selected combo '{name}' not found (concurrent modification?).");
+            let combo_name = match name {
+                Some(n) => n,
+                None => run_ui(combos.clone()).expect("No combo selected"),
+            };
+
+            if let Some(combo) = combos.iter().find(|c| c.name == combo_name) {
+                if !no_confirm {
+                    let confirm = prompt_input(&format!("Run combo '{}'? [Y/n] ", combo.name));
+                    if confirm.as_deref() == Some("n") {
+                        println!("Cancelled.");
+                        return;
+                    }
                 }
+                run_combo(combo);
+                update_last_used(&mut combos, &combo_name);
+                save_combos(&combos, combo_dir.clone());
             } else {
-                println!("Cancelled.");
+                eprintln!("Selected combo '{combo_name}' not found (concurrent modification?).");
             }
-        }
-        Some(cmd) => {
-            eprintln!("Unknown command: {cmd}");
-            eprintln!("Usage: comboman [run] | new | list | delete <name>");
         }
     }
 }
