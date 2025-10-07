@@ -139,7 +139,7 @@ pub fn select_stack(
         // Input
         if let Event::Key(key) = event::read().unwrap() {
             match key.code {
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     if cursor_idx > 0 {
                         cursor_idx -= 1;
                         list_state.select(Some(cursor_idx));
@@ -148,7 +148,7 @@ pub fn select_stack(
                         }
                     }
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     if cursor_idx + 1 < history.len() {
                         cursor_idx += 1;
                         list_state.select(Some(cursor_idx));
@@ -157,7 +157,7 @@ pub fn select_stack(
                         }
                     }
                 }
-                KeyCode::Char(' ') => {
+                KeyCode::Char(' ') | KeyCode::Char('v') => {
                     selection_mode = !selection_mode;
                     if selection_mode {
                         if !selected_indices.contains(&cursor_idx) {
@@ -167,10 +167,10 @@ pub fn select_stack(
                         selected_indices.retain(|&i| i != cursor_idx);
                     }
                 }
-                KeyCode::Left | KeyCode::Char('d') => {
+                KeyCode::Left | KeyCode::Char('h') => {
                     selected_indices.retain(|&i| i != cursor_idx);
                 }
-                KeyCode::Right => {
+                KeyCode::Right | KeyCode::Char('l') => {
                     if !selected_indices.contains(&cursor_idx) {
                         selected_indices.push(cursor_idx);
                     }
@@ -183,7 +183,7 @@ pub fn select_stack(
                         .collect();
                     return Some(selected_stack);
                 }
-                KeyCode::Esc => return None,
+                KeyCode::Esc | KeyCode::Char('q') => return None,
                 _ => {}
             }
         }

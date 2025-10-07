@@ -12,8 +12,8 @@ Run `cargo build --release` to get a `comboman` executable, which you can move t
 You can also use `comboman run <combo_name>` to run a specific combo if you already know its name.
 Add the `--no-confirm` argument to skip the confirmation dialogue.
 - `comboman new` lets the user select commands to create a new combo/script/function
-The `comboman new` command begins in `selection mode`, so as the upwards arrow is pressed, all the lines underneath the cursor are selected.
-You can toggle in between normal and select modes by pressing space; in normal mode, you can move up or down without selecting anything, and the line underneath the cursor when the normal mode is toggled on is deselected. 
-You can also deselect individual lines by pressing 'd' or left arrow.
+The `comboman new` command begins in `selection mode`, so as the upward arrow (or `k`) is pressed, all the lines underneath the cursor are selected.
+You can toggle in between normal and select modes by pressing `SPACE` (or `v`); in normal mode, you can move up or down without selecting anything, and the line underneath the cursor when the normal mode is toggled on is deselected. 
+You can use left arrow (or `h`) to deselect an individual entry, and right arrow (or `l`) to select an individual entry. To quit, you can press `Escape` or `q`.
 Press Enter to enter the next screen, which will let you Edit the selection or save it as a Combo, Script or Function.
 Lastly, you can use the argument `--combo-directory` to pass the path to the directory where you would like to store the combos.
